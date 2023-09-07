@@ -218,9 +218,11 @@ actions:
           // type.
           const startTimes = [
             { 'type': 'custom',  'times' : getItemsOfType('custom').filter(item => actions.Ephemeris.isBankHoliday(0, item.getMetadata()[NAMESPACE].configuration['file'])) },
+            { 'type': 'pre-workday', 'times' : (!(actions.Ephemeris.isBankHoliday(1) || actions.Ephemeris.isWeekend(1)) && (actions.Ephemeris.isBankHoliday() || actions.Ephemeris.isWeekend())) ? getItemsOfType('pre-workday') : [] },
             { 'type': 'holiday', 'times' : (actions.Ephemeris.isBankHoliday()) ? getItemsOfType('holiday') : [] },
             { 'type': 'dayset',  'times' : getItemsOfType('dayset').filter(item => actions.Ephemeris.isInDayset(items.getMetadata()[NAMESPACE].configuration['set'])) },
             { 'type': 'weekend', 'times' : (actions.Ephemeris.isWeekend()) ? getItemsOfType('weekend') : [] },
+            { 'type': 'pre-day-off', 'times' : (actions.Ephemeris.isBankHoliday(1) || actions.Ephemeris.isWeekend(1)) ? getItemsOfType('pre-day-off') : [] },
             { 'type': 'weekday', 'times' : (!actions.Ephemeris.isWeekend()) ? getItemsOfType('weekday') : [] },
             { 'type': 'default', 'times' : getItemsOfType('default') }
           ];

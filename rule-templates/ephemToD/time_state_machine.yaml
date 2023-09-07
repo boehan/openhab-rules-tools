@@ -66,7 +66,7 @@ actions:
 
         var DT_GROUP    = "{{timesOfDayGrp}}";
 
-        var DAY_TYPES   = ['custom', 'holiday', 'dayset', 'weekend', 'weekday', 'default'];
+        var DAY_TYPES   = ['custom', 'pre-workday', 'holiday', 'dayset', 'weekend', 'pre-workday', 'weekday', 'default'];
 
         var NAMESPACE   = '{{namespace}}';
 
@@ -106,17 +106,22 @@ actions:
             throw itemName + ' has malformed ' + NAMESPACE + ' metadata, no value found!';
           }
 
-          const dayType = md.configuration['type'];
+          DAY_TYPES.forEach(type => {
+            if(md.configuration[type]) {
+              const dayType = md.configuration[type];
+              
+              if(dayType == 'dayset' && !md.configuration[dayType]['set']) {
+                throw itemName + ' has malformed ' + NAMESPACE + ' metadata, type is "dayset" but required "set" property is not found!';
+              }
+
+              if(dayType == 'custom' && !md.configuration[dayType]['file']) {
+                throw itemName + ' has malformed ' + NAMESPACE + ' metadata, type is "custom" but required "file" property is not found!';
+              }
+            }
+          })
+          
           if(!dayType) {
-            throw itemName + ' has malformed ' + NAMESPACE + ' metadata, required "type" property is not found!';
-          }
-
-          if(dayType == 'dayset' && !md.configuration['set']) {
-            throw itemName + ' has malformed ' + NAMESPACE + ' metadata, type is "dayset" but required "set" property is not found!';
-          }
-
-          if(dayType == 'custom' && !md.configuration['file']) {
-            throw itemName + ' has malformed ' + NAMESPACE + ' metadata, type is "custom" but required "file" property is not found!';
+            throw itemName + ' has malformed ' + NAMESPACE + ' metadata, no configuration for day types found!';
           }
 
           if(items[itemName].type != 'DateTimeItem') {
@@ -140,7 +145,7 @@ actions:
          */
         var getItemsOfType = (type) => {
           const allItems = items[DT_GROUP].members;
-          return allItems.filter( item => item.getMetadata()[NAMESPACE].configuration['type'] == type);
+          return allItems.filter( item => item.getMetadata()[NAMESPACE].configuration[type] );
         };
 
 
@@ -203,9 +208,11 @@ actions:
         /**
          * Pull the set of Items for today based on Ephemeris. The Ephemeris hierarchy is
          * - custom
+         * - pre-workday 
          * - holiday
          * - dayset
          * - weeekend
+         * - pre-day-off
          * - weekday
          * - default
          *
@@ -217,10 +224,10 @@ actions:
           // the entry in this dict has an array of Items determines whether today is of that day
           // type.
           const startTimes = [
-            { 'type': 'custom',  'times' : getItemsOfType('custom').filter(item => actions.Ephemeris.isBankHoliday(0, item.getMetadata()[NAMESPACE].configuration['file'])) },
+            { 'type': 'custom',  'times' : getItemsOfType('custom').filter(item => actions.Ephemeris.isBankHoliday(0, item.getMetadata()[NAMESPACE].configuration['custom']['file'])) },
             { 'type': 'pre-workday', 'times' : (!(actions.Ephemeris.isBankHoliday(1) || actions.Ephemeris.isWeekend(1)) && (actions.Ephemeris.isBankHoliday() || actions.Ephemeris.isWeekend())) ? getItemsOfType('pre-workday') : [] },
             { 'type': 'holiday', 'times' : (actions.Ephemeris.isBankHoliday()) ? getItemsOfType('holiday') : [] },
-            { 'type': 'dayset',  'times' : getItemsOfType('dayset').filter(item => actions.Ephemeris.isInDayset(items.getMetadata()[NAMESPACE].configuration['set'])) },
+            { 'type': 'dayset',  'times' : getItemsOfType('dayset').filter(item => actions.Ephemeris.isInDayset(items.getMetadata()[NAMESPACE].configuration['dayset']['set'])) },
             { 'type': 'weekend', 'times' : (actions.Ephemeris.isWeekend()) ? getItemsOfType('weekend') : [] },
             { 'type': 'pre-day-off', 'times' : (actions.Ephemeris.isBankHoliday(1) || actions.Ephemeris.isWeekend(1)) ? getItemsOfType('pre-day-off') : [] },
             { 'type': 'weekday', 'times' : (!actions.Ephemeris.isWeekend()) ? getItemsOfType('weekday') : [] },

@@ -66,20 +66,19 @@ actions:
 
         var DT_GROUP    = "{{timesOfDayGrp}}";
 
-        var DAY_TYPES   = ['custom', 'pre-workday', 'holiday', 'dayset', 'weekend', 'pre-workday', 'weekday', 'default'];
+        var DAY_TYPES   = ['custom', 'preworkday', 'holiday', 'dayset', 'weekend', 'preworkday', 'weekday', 'default'];
 
         var NAMESPACE   = '{{namespace}}';
 
         var USAGE =   'Time Based State Machine Usage:\n'
                     + 'All date times must be a member of ' + DT_GROUP + '.\n'
                     + 'Each member of the Group must have ' + NAMESPACE + ' Item metadata of the following format:\n'
-                    + '  .items file: ' + NAMESPACE +'="STATE"[type="daytype", set="dayset", file="uri"]\n'
                     + "  UI YAML: use '" + NAMESPACE + "' for the namespace and metadata format:\n"
                     + '    value: STATE\n'
-                    + '    config:\n'
-                    + '      type: daytype\n'
-                    + '      set: dayset\n'
-                    + '      file: uri\n'
+                    + '    config: \n'
+                    + '      daytype: \n'
+                    + '      	set: dayset\n'
+                    + '      	file: uri\n'
                     + 'Where "STATE" is the state machine state that begins at the time stored in that Item, '
                     + '"daytype" is one of "default", "weekday", "weekend", "dayset", "holiday", or "custom". '
                     + 'If "dayset" is chosen for the type, the "set" property is required indicating the name of the '
@@ -208,11 +207,11 @@ actions:
         /**
          * Pull the set of Items for today based on Ephemeris. The Ephemeris hierarchy is
          * - custom
-         * - pre-workday 
+         * - preworkday
          * - holiday
          * - dayset
          * - weeekend
-         * - pre-day-off
+         * - predayoff
          * - weekday
          * - default
          *
@@ -225,11 +224,11 @@ actions:
           // type.
           const startTimes = [
             { 'type': 'custom',  'times' : getItemsOfType('custom').filter(item => actions.Ephemeris.isBankHoliday(0, item.getMetadata()[NAMESPACE].configuration['custom']['file'])) },
-            { 'type': 'pre-workday', 'times' : (!(actions.Ephemeris.isBankHoliday(1) || actions.Ephemeris.isWeekend(1)) && (actions.Ephemeris.isBankHoliday() || actions.Ephemeris.isWeekend())) ? getItemsOfType('pre-workday') : [] },
+            { 'type': 'preworkday', 'times' : (!(actions.Ephemeris.isBankHoliday(1) || actions.Ephemeris.isWeekend(1)) && (actions.Ephemeris.isBankHoliday() || actions.Ephemeris.isWeekend())) ? getItemsOfType('preworkday') : [] },
             { 'type': 'holiday', 'times' : (actions.Ephemeris.isBankHoliday()) ? getItemsOfType('holiday') : [] },
             { 'type': 'dayset',  'times' : getItemsOfType('dayset').filter(item => actions.Ephemeris.isInDayset(items.getMetadata()[NAMESPACE].configuration['dayset']['set'])) },
             { 'type': 'weekend', 'times' : (actions.Ephemeris.isWeekend()) ? getItemsOfType('weekend') : [] },
-            { 'type': 'pre-day-off', 'times' : (actions.Ephemeris.isBankHoliday(1) || actions.Ephemeris.isWeekend(1)) ? getItemsOfType('pre-day-off') : [] },
+            { 'type': 'predayoff', 'times' : (actions.Ephemeris.isBankHoliday(1) || actions.Ephemeris.isWeekend(1)) ? getItemsOfType('predayoff') : [] },
             { 'type': 'weekday', 'times' : (!actions.Ephemeris.isWeekend()) ? getItemsOfType('weekday') : [] },
             { 'type': 'default', 'times' : getItemsOfType('default') }
           ];

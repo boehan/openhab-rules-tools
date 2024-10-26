@@ -45,7 +45,7 @@ actions:
     configuration:
       type: application/javascript
       script: >
-        // Version 0.4
+        // Version 1.0
 
         var {TimerMgr, helpers} = require('openhab_rules_tools');
 
@@ -87,7 +87,6 @@ actions:
                     + 'holidays defined. The "set" and "file" properties are invalid when choosing any of the other '
                     + '"types".';
 
-
         /**
          * Validates the passed in Item has valid NAMESPACE metadata.
          *
@@ -97,11 +96,7 @@ actions:
         var validateItemConfig = (itemName) => {
           const md = items[itemName].getMetadata()[NAMESPACE];
 
-          if(!md) {
-            throw itemName + ' does not have ' + NAMESPACE + ' metadata!';
-          }
-
-          if(!md.value) {
+          if(md.value === undefined || md.value === null || md.value === '') {
             throw itemName + ' has malformed ' + NAMESPACE + ' metadata, no value found!';
           }
 
@@ -123,7 +118,7 @@ actions:
             throw itemName + ' has malformed ' + NAMESPACE + ' metadata, no configuration for day types found!';
           }
 
-          if(items[itemName].type != 'DateTimeItem') {
+          if(!items[itemName].type.startsWith('DateTime')) {
             throw itemName + ' is not a DateTime Item!';
           }
 
@@ -168,6 +163,14 @@ actions:
         var validateAllConfigs = () => {
           console.debug('Validating Item types, Item metadata, and Group membership');
 
+          // Check that all members of the Group have metadata
+          const itemsWithMD = items[DT_GROUP].members.filter(item => item.getMetadata(NAMESPACE)).length;
+          if(itemsWithMD != items[DT_GROUP].members.length) {
+            const noMdItems = items[DT_GROUP].members.filter(item => !item.getMetadata(NAMESPACE));
+            console.warn('The following Items do not have required ' + NAMESPACE + ' metadata: ' + noMdItems.map(item => item.name).join(', '));
+            return false; // no sense on performing any additional tests
+          }
+
           // Check each Item's metadata
           let isGood = helpers.checkGrpAndMetadata(NAMESPACE, DT_GROUP, validateItemConfig, USAGE);
 
@@ -176,8 +179,8 @@ actions:
             console.warn('The state Item ' + STATE_ITEM + ' does not exist!');
             isGood = false;
           }
-          const StringItem = Java.type('org.openhab.core.library.items.StringItem');
-          if(items[STATE_ITEM].type != 'StringItem') {
+
+          if(!items[STATE_ITEM].type.startsWith('String')) {
             console.warn('The state Item ' + STATE_ITEM + ' is not a String Item!');
             isGood = false;
           }

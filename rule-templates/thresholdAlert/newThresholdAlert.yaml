@@ -129,7 +129,7 @@ actions:
     configuration:
       type: application/javascript
       script: >-
-        // Version 0.13
+        // Version 1.2
 
         var {helpers, LoopingTimer, Gatekeeper, timeUtils, RateLimit} =
         require('openhab_rules_tools');
@@ -275,18 +275,18 @@ actions:
             return null;
           }
 
-          let rval = time.toZDT(timeout);
+          let rval = time.toZDT(timeout.toString());
           let start = time.toZDT(dndStart);
           let end = time.toZDT(dndEnd);
-          if(rval.isBetweenTimes(dndStart, dndEnd)) {
+          if(rval.isBetweenTimes(start, end)) {
             console.debug('Alert is scheduled during do not distrub time, moving to ' + dndEnd);
-            rval = dndEnd;
+            rval = end;
             if(time.toZDT(rval).isBefore(time.toZDT())) {
               console.debug('Moving alert time to tomorrow');
-              rval = timeUtils.toTomorrow(dndEnd);
+              rval = timeUtils.toTomorrow(end);
             }
           }
-          return rval.toString();
+          return rval;
         }
 
 
@@ -410,8 +410,9 @@ actions:
             record.initAlertTimer = LoopingTimer();
             record.initAlertTimer.loop(() => {
               console.debug('Calling init alert rule for ' + record.name);
-              callRule(state, record.alertRule, false, true, record);
+              callRule(state, record.initAlertRule, false, true, record);
               record.initAlertTimer = null;
+              return null;
             }, generateAlertTime(time.toZDT(), record.dndStart, record.dndEnd));
             // Create the alert timer
             console.debug('Creating looping alert timer for ' + record.name + ' at ' + timeout);
@@ -440,13 +441,13 @@ actions:
          * @return {boolean} true if curr is different from alert by hyst or more, or if the arguments are incompatable.
          */
         var applyHyst = (curr, alert, hyst) => {
-          console.debug('Applying hysteresis with: ' + curr + ', ' + alert + ', ' + hyst);
+          console.debug('Applying hysteresis with: curr = ' + curr + ', alert = ' + alert + ', hyst = ' + hyst);
 
           // Quantity
-          if(curr.unit !== undefined && alert.unit && hyst.unit !== undefined) {
+          if(curr.unit !== undefined && alert.unit != undefined && hyst.unit !== undefined) {
             try {
               const delta = (curr.lessThan(alert)) ? alert.subtract(curr) : curr.subtract(alert);
-              console.debug('Applying hysteresis, delta = ' + delta + ' hystRange = ' + hyst);
+              console.debug('Applying hysteresis using Quantities, delta = ' + delta + ' hystRange = ' + hyst);
               return delta.greaterThan(hyst);
             } catch(e) {
               console.error('Attempting to apply hysteresis with Quantities of incompatable units. Not applying hysteresis');
@@ -455,8 +456,11 @@ actions:
           }
           // Number
           else if(typeof curr !== 'string' && typeof alert !== 'string' && typeof hyst !== 'string') {
+            curr = (curr.unit !== undefined) ? curr.float : curr;
+            alert = (alert.unit !== undefined) ? alert.float : alert;
+            hyst = (hyst.unit !== undefined) ? hyst.float : float;
             const delta = Math.abs(curr - alert);
-            console.debug('Applying hysteresis, delta = ' + delta + ' hystRange = ' + hyst);
+            console.debug('Applying hysteresis using numbers, delta = ' + delta + ' hystRange = ' + hyst);
             return delta > hyst;
           }
           else {
@@ -498,14 +502,21 @@ actions:
           if(record.endRule && record.alerted) {
             console.debug('Sending alert that ' + record.name + ' is no longer in the alerting state');
             // Schedule a timer if in DND, otherwise run now
-            record.endAlertTimer = LoopingTimer();
-            record.endAlertTimer.loop(() => {
-              console.debug('Calling end alert rule for ' + record.name);
-              callRule(stateToValue(items[record.name].rawState), record.endRule, false, false, record);
-              record.alerted = false;
-              record.alertState = null;
-              record.endAlertTimer = null;
-            }, generateAlertTime(time.toZDT(), record.dndStart, record.dndEnd));
+            const scheduleTime =  generateAlertTime(time.toZDT(), record.dndStart, record.dndEnd);
+            if(record.endAlertTimer === undefined || record.endAlertTimer === null) {
+              record.endAlertTimer = LoopingTimer();
+              record.endAlertTimer.loop(() => {
+                console.debug('Calling end alert rule for ' + record.name);
+                callRule(stateToValue(items[record.name].rawState), record.endRule, false, false, record);
+                record.alerted = false;
+                record.alertState = null;
+                record.endAlertTimer = null;
+                return null;
+              },scheduleTime);
+            }
+            else {
+              record.endAlertTimer.timer.reschedule(scheduleTime);
+            }
           }
           else if(!record.endRule && record.alerted) {
             console.debug('No end alert rule is configured, exiting alerting for ' + record.name);
@@ -816,11 +827,11 @@ actions:
           console.info('Cancelling any running timers');
           const records = cache.private.get('records');
           if(records !== null) {
-            Object.keys(records).forEach(record => {
+            Object.values(records).forEach(record => {
               if(record.alertTimer !== null && record.alertTimer !== undefined){
                 console.info(record.name + ' has an alert timer scheduled, cancelling now.');
-                record.alertTimer = null;
                 record.alertTimer.cancel();
+                record.alertTimer = null;
               }
               if(record.endAlertTimer !== null && record.endAlertTimer !== undefined) {
                 console.info(record.name + ' has an end alert timer scheduled, cancelling now.');
@@ -882,7 +893,7 @@ actions:
 
           // Inform that there is no default reminder period configured, there will be no repreated alerts
           if(defaultRemPeriod == '') {
-            console.info('Items without ' + namespace + ' remPeriod metadata will not repeate alerts');
+            console.info('Items without ' + namespace + ' remPeriod metadata will not repeat alerts');
           } else if(!validateDuration(defaultRemPeriod)){
             error = true;
             console.error('The default reminder period ' + defaultRemPeriod + ' is not a parsable ISO8601 duration string');
@@ -1060,7 +1071,7 @@ actions:
             }
             else if(md['hysteresis'] && item.quantityState !== null && stateToValue(md['hysteresis']).unit !== undefined) {
               try {
-                item.quantityState.equals(stateToValue(md['hysteresis']));
+                item.quantityState.equal(stateToValue(md['hysteresis']));
               } catch(e) {
                 error = true;
                 console.error('Item ' + item.name + ' has a hysteresis ' + md['hysteresis'] + ' with units incompatible with ' + item.quantityState.unit);

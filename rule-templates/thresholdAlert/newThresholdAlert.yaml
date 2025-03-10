@@ -129,7 +129,7 @@ actions:
     configuration:
       type: application/javascript
       script: >-
-        // Version 1.2
+        // Version 1.4
 
         var {helpers, LoopingTimer, Gatekeeper, timeUtils, RateLimit} =
         require('openhab_rules_tools');
@@ -186,7 +186,6 @@ actions:
 
         var initAlertRuleUID = '{{initAlertRule}}';
 
-
         // ~~~~~~~~~~~Functions
 
         /**
@@ -197,44 +196,37 @@ actions:
          */
         var stateToValue = (state) => {
           console.debug('Processing state ' + state + ' of type ' + typeof state);
-          if(typeof state === 'string') {
-            console.debug('state is a string: ' + state);
-            if(state.includes(' ')) {
-              try {
-                console.debug('state is a Quantity: ' + state);
-                return Quantity(state)
-              } catch(e) {
-                // do nothing, leave it as a String
-                console.debug('Not a Quantity but has a space, leaving as a string: ' + state);
-                return state;
-              }
-            }
-            else if(state == '') {
-              console.debug('state is the empty string, no conversion possible');
+          if(typeof state !== 'string') {
+            console.debug('state is not a String, converting to a String.');
+            state = state.toString();
+          }
+
+          console.debug('state is a string: ' + state);
+          if(state.includes(' ')) {
+            try {
+              console.debug('state is a Quantity: ' + state);
+              return Quantity(state)
+            } catch(e) {
+              // do nothing, leave it as a String
+              console.debug('Not a Quantity but has a space, leaving as a string: ' + state);
               return state;
             }
-            else if(!isNaN(state)) {
-              console.debug('state is a number: ' + state)
-              return Number.parseFloat(state);
-            }
-            else if(state == 'UnDefType' || state == 'NULL' || state == 'UNDEF') {
-              console.debug('state is an undef type, normalizing to UnDefType');
-              return 'UnDefType';
-            }
-            console.debug('Leaving state as a string');
+          }
+          else if(state == '') {
+            console.debug('state is the empty string, no conversion possible');
             return state;
           }
-          else if(state instanceof DecimalType || state instanceof PercentType) {
-            console.debug('state is a DecimalType or PercentType: ' + state);
-            return state.floatValue();
+          else if(!isNaN(state)) {
+            console.debug('state is a number: ' + state)
+            return Number.parseFloat(state);
           }
-          else if(state instanceof QuantityType) {
-            console.debug('state is a QuantityType, converting to Quantity: ' + state);
-            return Quantity(state);
+          else if(state == 'UnDefType' || state == 'NULL' || state == 'UNDEF') {
+            console.debug('state is an undef type, normalizing to UnDefType');
+            return 'UnDefType';
           }
           else {
-            console.debug('Not numeric, leaving as a string: ' + state);
-            return state.toString();
+            console.debug('Leaving state as a string');
+            return state;
           }
         }
 
@@ -346,32 +338,33 @@ actions:
          * function returns how long to wait for the next call (adjusted for DND) or null when it's
          * time to exit.
          *
-         * @param {Object} Object containing alertTimer, endAlertTimer, alerted, alertState
+         * @param {String} name of the Item this alert is for
          * @return {function} function that takes no arguments called by the looping timer
          */
-        var sendAlertGenerator = (record) => {
+        var sendAlertGenerator = (name) => {
           return () => {
-            const item = items[record.name];
-            const currState = stateToValue(items[record.name].rawState);
+            console.loggerName = loggerBase+"."+name;
+            const record = cache.private.get('records')[name];
+            const item = items[name];
+            const currState = stateToValue(items[name].state);
             refreshRecord(record);
 
-            // We can still get Multithreaded exceptions when calling another rule, this should reduce the occurance of that
             console.debug('Alert timer expired for ' + record.name + ' with dnd between ' + record.dndStart + ' and ' + record.dndEnd + ' and reminder period ' + record.remPeriod);
             let repeatTime = generateAlertTime(record.remPeriod, record.dndStart, record.dndEnd); // returns null if remPeriod is '', which cancels the loop
 
             // Call alert rule if still alerting
             if(isAlertingState(currState, record)) {
-              console.debug(record.name + ' is still in an alerting state.');
+              console.debug(name + ' is still in an alerting state.');
               callRule(currState, record.alertRule, true, false, record);
               if(!record.alerted) record.alertState = currState;
               record.alerted = true;
               if(repeatTime === null) record.alertTimer = null; // clean up if no longer looping
-              console.debug('Waiting until ' + repeatTime + ' to send reminder for ' + record.name);
+              console.debug('Waiting until ' + repeatTime + ' to send reminder for ' + name);
               return repeatTime;
             }
             // no longer alerting, cancel the repeat, send an alert if configured
             else {
-              console.debug(record.name + ' is no longer in an alerting state but timer was not cancelled, this should not happen');
+              console.debug(name + ' is no longer in an alerting state but timer was not cancelled, this should not happen');
               record.alertTimer = null;
               return null;
             }
@@ -417,7 +410,7 @@ actions:
             // Create the alert timer
             console.debug('Creating looping alert timer for ' + record.name + ' at ' + timeout);
             record.alertTimer = LoopingTimer();
-            record.alertTimer.loop(sendAlertGenerator(record), timeout);
+            record.alertTimer.loop(sendAlertGenerator(record.name), timeout);
           }
           // Reschedule the alert timer
           else if(record.alertTimer !== null && record.reschedule) {
@@ -507,7 +500,7 @@ actions:
               record.endAlertTimer = LoopingTimer();
               record.endAlertTimer.loop(() => {
                 console.debug('Calling end alert rule for ' + record.name);
-                callRule(stateToValue(items[record.name].rawState), record.endRule, false, false, record);
+                callRule(stateToValue(items[record.name].state), record.endRule, false, false, record);
                 record.alerted = false;
                 record.alertState = null;
                 record.endAlertTimer = null;
@@ -629,7 +622,7 @@ actions:
           console.debug('Converting threshold to value');
           record.threshold = stateToValue(thresholdStr);
           if(md['threshold'] !== undefined) record.threshold = stateToValue(md['threshold']);
-          if(md['thresholdItem'] !== undefined) record.threshold = stateToValue(items[md['thresholdItem']].rawState);
+          if(md['thresholdItem'] !== undefined) record.threshold = stateToValue(items[md['thresholdItem']].state);
           record.operator      = (md['operator'] !== undefined) ? md['operator'] : operator;
           record.invert        = (md['invert'] !== undefined) ? md['invert'] === true : invert;
           record.reschedule    = (md['reschedule'] !== undefined) ? md['reschedule'] === true : reschedule;
@@ -1127,7 +1120,7 @@ actions:
             case 'ItemStateChangedEvent':
               console.loggerName = loggerBase+'.'+event.itemName;
               console.debug('Processing an Item event');
-              procEvent(event.itemName, stateToValue(event.itemState));
+              procEvent(event.itemName, stateToValue(event.itemState.toString()));
               break;
             default:
               console.info('Rule triggered without an Item event, ' + event.type + ' checking the rule config');
